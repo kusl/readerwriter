@@ -31,17 +31,12 @@ namespace ReaderWriter.Core
     /// <summary>
     /// Thread-safe implementation of ISharedResourceService using ReaderWriterLockSlim.
     /// </summary>
-    public class SharedResourceService : ISharedResourceService
+    public class SharedResourceService(ILogger<SharedResourceService> logger) : ISharedResourceService
     {
-        private readonly ILogger<SharedResourceService> _logger;
+        private readonly ILogger<SharedResourceService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         private static readonly ReaderWriterLockSlim _lock = new();
         private readonly List<string> _sharedData = [];
         private readonly Random _random = new();
-
-        public SharedResourceService(ILogger<SharedResourceService> logger)
-        {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
 
         public async Task<string> ReadAsync(int readerId, CancellationToken cancellationToken)
         {
@@ -55,7 +50,7 @@ namespace ReaderWriter.Core
                     _logger.LogInformation("Reader {ReaderId} acquired read lock", readerId);
 
                     // Simulate variable read duration
-                    var delay = _random.Next(100, 500);
+                    int delay = _random.Next(100, 500);
                     Thread.Sleep(delay);
 
                     string data = _sharedData.Count > 0
@@ -86,7 +81,7 @@ namespace ReaderWriter.Core
                     _logger.LogInformation("Writer {WriterId} acquired write lock", writerId);
 
                     // Simulate variable write duration
-                    var delay = _random.Next(200, 800);
+                    int delay = _random.Next(200, 800);
                     Thread.Sleep(delay);
 
                     _sharedData.Add(data);

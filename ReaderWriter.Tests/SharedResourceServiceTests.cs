@@ -13,7 +13,7 @@ namespace ReaderWriter.Tests
     // Simple test logger implementation
     public class TestLogger<T> : ILogger<T>
     {
-        private readonly List<LogEntry> _logs = new();
+        private readonly List<LogEntry> _logs = [];
 
         public class LogEntry
         {
@@ -51,14 +51,14 @@ namespace ReaderWriter.Tests
         public async Task WriteAsync_WithValidData_AddsItemToResource()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var writerId = 1;
-            var data = "Test data";
-            var cancellationToken = CancellationToken.None;
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            int writerId = 1;
+            string data = "Test data";
+            CancellationToken cancellationToken = CancellationToken.None;
 
             // Act
             await service.WriteAsync(writerId, data, cancellationToken);
-            var readData = await service.ReadAsync(1, cancellationToken);
+            string readData = await service.ReadAsync(1, cancellationToken);
 
             // Assert
             Assert.Equal(data, readData);
@@ -74,12 +74,12 @@ namespace ReaderWriter.Tests
         public async Task ReadAsync_OnEmptyResource_ReturnsDefault()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var readerId = 1;
-            var cancellationToken = CancellationToken.None;
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            int readerId = 1;
+            CancellationToken cancellationToken = CancellationToken.None;
 
             // Act
-            var result = await service.ReadAsync(readerId, cancellationToken);
+            string result = await service.ReadAsync(readerId, cancellationToken);
 
             // Assert
             Assert.Equal("No data available", result);
@@ -95,18 +95,18 @@ namespace ReaderWriter.Tests
         public async Task WriterExclusivity_BlocksConcurrentReaders()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var writeStarted = new ManualResetEventSlim(false);
-            var continueWrite = new ManualResetEventSlim(false);
-            var cancellationToken = CancellationToken.None;
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            ManualResetEventSlim writeStarted = new(false);
+            ManualResetEventSlim continueWrite = new(false);
+            CancellationToken cancellationToken = CancellationToken.None;
 
             // Act
-            var writeTask = Task.Run(async () =>
+            Task writeTask = Task.Run(async () =>
             {
                 await Task.Run(() =>
                 {
                     // Custom write logic to control timing
-                    var field = typeof(SharedResourceService).GetField("_lock",
+                    System.Reflection.FieldInfo? field = typeof(SharedResourceService).GetField("_lock",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
                     if (field?.GetValue(null) is ReaderWriterLockSlim lockObj)
                     {
@@ -128,13 +128,13 @@ namespace ReaderWriter.Tests
             writeStarted.Wait();
 
             // Start reader tasks while writer holds the lock
-            var readerTasks = new List<Task<bool>>();
+            List<Task<bool>> readerTasks = [];
             for (int i = 0; i < 3; i++)
             {
-                var readerId = i;
+                int readerId = i;
                 readerTasks.Add(Task.Run(async () =>
                 {
-                    var sw = Stopwatch.StartNew();
+                    Stopwatch sw = Stopwatch.StartNew();
                     await service.ReadAsync(readerId, cancellationToken);
                     sw.Stop();
                     // If reader was blocked, it should take at least 100ms
@@ -150,7 +150,7 @@ namespace ReaderWriter.Tests
 
             // Wait for all tasks
             await writeTask;
-            var results = await Task.WhenAll(readerTasks);
+            bool[] results = await Task.WhenAll(readerTasks);
 
             // Assert - all readers should have been blocked
             Assert.All(results, blocked => Assert.True(blocked));
@@ -160,17 +160,17 @@ namespace ReaderWriter.Tests
         public async Task WriterExclusivity_BlocksConcurrentWriters()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var firstWriteStarted = new ManualResetEventSlim(false);
-            var continueFirstWrite = new ManualResetEventSlim(false);
-            var cancellationToken = CancellationToken.None;
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            ManualResetEventSlim firstWriteStarted = new(false);
+            ManualResetEventSlim continueFirstWrite = new(false);
+            CancellationToken cancellationToken = CancellationToken.None;
 
             // Act
-            var firstWriteTask = Task.Run(async () =>
+            Task firstWriteTask = Task.Run(async () =>
             {
                 await Task.Run(() =>
                 {
-                    var field = typeof(SharedResourceService).GetField("_lock",
+                    System.Reflection.FieldInfo? field = typeof(SharedResourceService).GetField("_lock",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
                     if (field?.GetValue(null) is ReaderWriterLockSlim lockObj)
                     {
@@ -192,8 +192,8 @@ namespace ReaderWriter.Tests
             firstWriteStarted.Wait();
 
             // Start second writer while first holds the lock
-            var sw = Stopwatch.StartNew();
-            var secondWriteTask = service.WriteAsync(2, "Second writer data", cancellationToken);
+            Stopwatch sw = Stopwatch.StartNew();
+            Task secondWriteTask = service.WriteAsync(2, "Second writer data", cancellationToken);
 
             // Give second writer time to try acquiring lock
             await Task.Delay(200);
@@ -214,18 +214,18 @@ namespace ReaderWriter.Tests
         public async Task ReaderConcurrency_AllowsMultipleConcurrentReaders()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var cancellationToken = CancellationToken.None;
+            SharedResourceService service = CreateService(out _);
+            CancellationToken cancellationToken = CancellationToken.None;
 
             // Add initial data
             await service.WriteAsync(1, "Initial data", cancellationToken);
 
             // Act - Start multiple readers concurrently
-            var sw = Stopwatch.StartNew();
-            var readerTasks = new List<Task>();
+            Stopwatch sw = Stopwatch.StartNew();
+            List<Task> readerTasks = [];
             for (int i = 0; i < 5; i++)
             {
-                var readerId = i;
+                int readerId = i;
                 readerTasks.Add(service.ReadAsync(readerId, cancellationToken));
             }
 
@@ -243,25 +243,25 @@ namespace ReaderWriter.Tests
         public async Task HighConcurrency_MaintainsDataIntegrity()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var cancellationToken = CancellationToken.None;
-            var writersCount = 5;
-            var readersCount = 50;
-            var expectedWrites = new List<string>();
-            var writeLock = new object();
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            CancellationToken cancellationToken = CancellationToken.None;
+            int writersCount = 5;
+            int readersCount = 50;
+            List<string> expectedWrites = [];
+            object writeLock = new();
 
             // Act - Run writers and readers concurrently
-            var tasks = new List<Task>();
+            List<Task> tasks = [];
 
             // Create writer tasks
             for (int i = 0; i < writersCount; i++)
             {
-                var writerId = i;
+                int writerId = i;
                 tasks.Add(Task.Run(async () =>
                 {
                     for (int j = 0; j < 10; j++)
                     {
-                        var data = $"Writer{writerId}-Item{j}";
+                        string data = $"Writer{writerId}-Item{j}";
                         lock (writeLock)
                         {
                             expectedWrites.Add(data);
@@ -274,7 +274,7 @@ namespace ReaderWriter.Tests
             // Create reader tasks
             for (int i = 0; i < readersCount; i++)
             {
-                var readerId = i;
+                int readerId = i;
                 tasks.Add(Task.Run(async () =>
                 {
                     for (int j = 0; j < 5; j++)
@@ -289,7 +289,7 @@ namespace ReaderWriter.Tests
 
             // Assert - Verify data integrity
             // Use reflection to access the internal state
-            var field = typeof(SharedResourceService).GetField("_sharedData",
+            System.Reflection.FieldInfo? field = typeof(SharedResourceService).GetField("_sharedData",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (field?.GetValue(service) is List<string> sharedData)
             {
@@ -297,7 +297,7 @@ namespace ReaderWriter.Tests
                 Assert.Equal(expectedWrites.Count, sharedData.Count);
 
                 // Verify all expected writes are present
-                foreach (var expectedWrite in expectedWrites)
+                foreach (string expectedWrite in expectedWrites)
                 {
                     Assert.Contains(expectedWrite, sharedData);
                 }
@@ -307,7 +307,7 @@ namespace ReaderWriter.Tests
             }
             else
             {
-                Assert.True(false, "Could not access internal shared data");
+                Assert.Fail("Could not access internal shared data");
             }
         }
 
@@ -315,21 +315,21 @@ namespace ReaderWriter.Tests
         public async Task MultipleReadersGetSameData_WhenNoWritesOccur()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var cancellationToken = CancellationToken.None;
-            var testData = "Test data for concurrent reads";
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            CancellationToken cancellationToken = CancellationToken.None;
+            string testData = "Test data for concurrent reads";
 
             // Write initial data
             await service.WriteAsync(1, testData, cancellationToken);
 
             // Act - Multiple readers read concurrently
-            var readTasks = new List<Task<string>>();
+            List<Task<string>> readTasks = [];
             for (int i = 0; i < 10; i++)
             {
                 readTasks.Add(service.ReadAsync(i, cancellationToken));
             }
 
-            var results = await Task.WhenAll(readTasks);
+            string[] results = await Task.WhenAll(readTasks);
 
             // Assert - All readers should get the same data
             Assert.All(results, result => Assert.Equal(testData, result));
@@ -339,17 +339,17 @@ namespace ReaderWriter.Tests
         public async Task Service_HandlesRapidReadWriteAlternation()
         {
             // Arrange
-            var service = CreateService(out var logger);
-            var cancellationToken = CancellationToken.None;
-            var iterations = 20;
-            var errors = new List<Exception>();
+            SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
+            CancellationToken cancellationToken = CancellationToken.None;
+            int iterations = 20;
+            List<Exception> errors = [];
 
             // Act - Rapidly alternate between reads and writes
-            var tasks = new List<Task>();
+            List<Task> tasks = [];
 
             for (int i = 0; i < iterations; i++)
             {
-                var iteration = i;
+                int iteration = i;
 
                 // Writer task
                 tasks.Add(Task.Run(async () =>
