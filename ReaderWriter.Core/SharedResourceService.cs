@@ -35,7 +35,7 @@ namespace ReaderWriter.Core
     {
         private readonly ILogger<SharedResourceService> _logger;
         private static readonly ReaderWriterLockSlim _lock = new();
-        private readonly List<string> _sharedData = new();
+        private readonly List<string> _sharedData = [];
         private readonly Random _random = new();
 
         public SharedResourceService(ILogger<SharedResourceService> logger)
@@ -59,7 +59,7 @@ namespace ReaderWriter.Core
                     Thread.Sleep(delay);
 
                     string data = _sharedData.Count > 0
-                        ? _sharedData[_sharedData.Count - 1]
+                        ? _sharedData[^1]
                         : "No data available";
 
                     _logger.LogInformation("Reader {ReaderId} read data: {Data}", readerId, data);

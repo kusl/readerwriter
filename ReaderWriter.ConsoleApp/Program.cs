@@ -59,7 +59,7 @@ namespace ReaderWriter.ConsoleApp
         private readonly ILogger<SimulationHost> _logger;
         private readonly ISharedResourceService _sharedResourceService;
         private readonly SimulationSettings _settings;
-        private CancellationTokenSource _cancellationTokenSource;
+        private CancellationTokenSource? _cancellationTokenSource;
 
         public SimulationHost(
             ILogger<SimulationHost> logger,
@@ -115,7 +115,7 @@ namespace ReaderWriter.ConsoleApp
                     }
 
                     _logger.LogInformation("Writer {WriterId} completed {WriteCount} writes", writerId, writeCount);
-                }));
+                }, _cancellationTokenSource.Token));
             }
 
             // Create reader tasks
@@ -149,7 +149,7 @@ namespace ReaderWriter.ConsoleApp
                     }
 
                     _logger.LogInformation("Reader {ReaderId} completed {ReadCount} reads", readerId, readCount);
-                }));
+                }, _cancellationTokenSource.Token));
             }
 
             // Wait for all tasks to complete

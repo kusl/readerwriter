@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
 using ReaderWriter.Core;
 using System;
 using System.Collections.Generic;
@@ -11,11 +10,40 @@ using Xunit;
 
 namespace ReaderWriter.Tests
 {
+    // Simple test logger implementation
+    public class TestLogger<T> : ILogger<T>
+    {
+        private readonly List<LogEntry> _logs = new();
+
+        public class LogEntry
+        {
+            public LogLevel LogLevel { get; set; }
+            public string Message { get; set; } = string.Empty;
+            public Exception? Exception { get; set; }
+        }
+
+        public IReadOnlyList<LogEntry> Logs => _logs;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            _logs.Add(new LogEntry
+            {
+                LogLevel = logLevel,
+                Message = formatter(state, exception),
+                Exception = exception
+            });
+        }
+    }
+
     public class SharedResourceServiceTests
     {
-        private SharedResourceService CreateService(out FakeLogger<SharedResourceService> logger)
+        private static SharedResourceService CreateService(out TestLogger<SharedResourceService> logger)
         {
-            logger = new FakeLogger<SharedResourceService>();
+            logger = new TestLogger<SharedResourceService>();
             return new SharedResourceService(logger);
         }
 
@@ -36,11 +64,10 @@ namespace ReaderWriter.Tests
             Assert.Equal(data, readData);
 
             // Verify logging
-            var logs = logger.GetLogs();
-            Assert.Contains(logs, log => log.Message.Contains("attempting to acquire write lock"));
-            Assert.Contains(logs, log => log.Message.Contains("acquired write lock"));
-            Assert.Contains(logs, log => log.Message.Contains("wrote data"));
-            Assert.Contains(logs, log => log.Message.Contains("released write lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("attempting to acquire write lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("acquired write lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("wrote data"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("released write lock"));
         }
 
         [Fact]
@@ -58,11 +85,10 @@ namespace ReaderWriter.Tests
             Assert.Equal("No data available", result);
 
             // Verify logging
-            var logs = logger.GetLogs();
-            Assert.Contains(logs, log => log.Message.Contains("attempting to acquire read lock"));
-            Assert.Contains(logs, log => log.Message.Contains("acquired read lock"));
-            Assert.Contains(logs, log => log.Message.Contains("read data"));
-            Assert.Contains(logs, log => log.Message.Contains("released read lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("attempting to acquire read lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("acquired read lock"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("read data"));
+            Assert.Contains(logger.Logs, log => log.Message.Contains("released read lock"));
         }
 
         [Fact]
@@ -82,20 +108,21 @@ namespace ReaderWriter.Tests
                     // Custom write logic to control timing
                     var field = typeof(SharedResourceService).GetField("_lock",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                    var lockObj = (ReaderWriterLockSlim)field.GetValue(null);
-
-                    lockObj.EnterWriteLock();
-                    try
+                    if (field?.GetValue(null) is ReaderWriterLockSlim lockObj)
                     {
-                        writeStarted.Set();
-                        continueWrite.Wait(); // Block until test signals to continue
+                        lockObj.EnterWriteLock();
+                        try
+                        {
+                            writeStarted.Set();
+                            continueWrite.Wait(); // Block until test signals to continue
+                        }
+                        finally
+                        {
+                            lockObj.ExitWriteLock();
+                        }
                     }
-                    finally
-                    {
-                        lockObj.ExitWriteLock();
-                    }
-                });
-            });
+                }, cancellationToken);
+            }, cancellationToken);
 
             // Wait for write to start and acquire lock
             writeStarted.Wait();
@@ -112,7 +139,7 @@ namespace ReaderWriter.Tests
                     sw.Stop();
                     // If reader was blocked, it should take at least 100ms
                     return sw.ElapsedMilliseconds > 100;
-                }));
+                }, cancellationToken));
             }
 
             // Give readers time to try acquiring lock (they should be blocked)
@@ -145,20 +172,21 @@ namespace ReaderWriter.Tests
                 {
                     var field = typeof(SharedResourceService).GetField("_lock",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                    var lockObj = (ReaderWriterLockSlim)field.GetValue(null);
-
-                    lockObj.EnterWriteLock();
-                    try
+                    if (field?.GetValue(null) is ReaderWriterLockSlim lockObj)
                     {
-                        firstWriteStarted.Set();
-                        continueFirstWrite.Wait();
+                        lockObj.EnterWriteLock();
+                        try
+                        {
+                            firstWriteStarted.Set();
+                            continueFirstWrite.Wait();
+                        }
+                        finally
+                        {
+                            lockObj.ExitWriteLock();
+                        }
                     }
-                    finally
-                    {
-                        lockObj.ExitWriteLock();
-                    }
-                });
-            });
+                }, cancellationToken);
+            }, cancellationToken);
 
             // Wait for first write to start
             firstWriteStarted.Wait();
@@ -240,7 +268,7 @@ namespace ReaderWriter.Tests
                         }
                         await service.WriteAsync(writerId, data, cancellationToken);
                     }
-                }));
+                }, cancellationToken));
             }
 
             // Create reader tasks
@@ -253,7 +281,7 @@ namespace ReaderWriter.Tests
                     {
                         await service.ReadAsync(readerId, cancellationToken);
                     }
-                }));
+                }, cancellationToken));
             }
 
             // Wait for all tasks to complete
@@ -263,19 +291,24 @@ namespace ReaderWriter.Tests
             // Use reflection to access the internal state
             var field = typeof(SharedResourceService).GetField("_sharedData",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var sharedData = (List<string>)field.GetValue(service);
-
-            Assert.Equal(writersCount * 10, sharedData.Count);
-            Assert.Equal(expectedWrites.Count, sharedData.Count);
-
-            // Verify all expected writes are present
-            foreach (var expectedWrite in expectedWrites)
+            if (field?.GetValue(service) is List<string> sharedData)
             {
-                Assert.Contains(expectedWrite, sharedData);
-            }
+                Assert.Equal(writersCount * 10, sharedData.Count);
+                Assert.Equal(expectedWrites.Count, sharedData.Count);
 
-            // Verify no duplicate or unexpected data
-            Assert.Equal(sharedData.Count, sharedData.Distinct().Count());
+                // Verify all expected writes are present
+                foreach (var expectedWrite in expectedWrites)
+                {
+                    Assert.Contains(expectedWrite, sharedData);
+                }
+
+                // Verify no duplicate or unexpected data
+                Assert.Equal(sharedData.Count, sharedData.Distinct().Count());
+            }
+            else
+            {
+                Assert.True(false, "Could not access internal shared data");
+            }
         }
 
         [Fact]
@@ -332,7 +365,7 @@ namespace ReaderWriter.Tests
                             errors.Add(ex);
                         }
                     }
-                }));
+                }, cancellationToken));
 
                 // Reader task
                 tasks.Add(Task.Run(async () =>
@@ -348,7 +381,7 @@ namespace ReaderWriter.Tests
                             errors.Add(ex);
                         }
                     }
-                }));
+                }, cancellationToken));
             }
 
             await Task.WhenAll(tasks);
