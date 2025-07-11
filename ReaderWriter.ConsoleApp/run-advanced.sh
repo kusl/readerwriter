@@ -31,8 +31,8 @@ print_info() {
 
 # Script configuration
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SOLUTION_ROOT="$SCRIPT_DIR"
-CONSOLE_APP_DIR="$SOLUTION_ROOT/ReaderWriter.ConsoleApp"
+SOLUTION_ROOT="$(dirname "$SCRIPT_DIR")"
+CONSOLE_APP_DIR="$SCRIPT_DIR"
 PUBLISH_DIR="$CONSOLE_APP_DIR/publish-linux"
 
 # Default values

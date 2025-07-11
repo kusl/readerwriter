@@ -30,9 +30,9 @@ set -e
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Set the solution root directory (assuming script is in the solution root)
-SOLUTION_ROOT="$SCRIPT_DIR"
-CONSOLE_APP_DIR="$SOLUTION_ROOT/ReaderWriter.ConsoleApp"
+# Set the solution root directory (script is in ReaderWriter.ConsoleApp)
+SOLUTION_ROOT="$(dirname "$SCRIPT_DIR")"
+CONSOLE_APP_DIR="$SCRIPT_DIR"
 PUBLISH_DIR="$CONSOLE_APP_DIR/publish-linux"
 
 print_status "Starting Reader-Writer application build process..."
