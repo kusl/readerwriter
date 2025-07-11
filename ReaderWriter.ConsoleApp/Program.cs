@@ -29,7 +29,7 @@ namespace ReaderWriter.ConsoleApp
     {
         public static async Task Main(string[] args)
         {
-            IHost host = Host.CreateDefaultBuilder(args)
+            var host = Host.CreateDefaultBuilder(args)
                 .UseSerilog((context, services, configuration) => configuration
                     .ReadFrom.Configuration(context.Configuration)
                     .ReadFrom.Services(services))
@@ -54,15 +54,25 @@ namespace ReaderWriter.ConsoleApp
     /// <summary>
     /// Hosted service that orchestrates the reader-writer simulation.
     /// </summary>
-    public class SimulationHost(
-        ILogger<SimulationHost> logger,
-        ISharedResourceService sharedResourceService,
-        IOptions<SimulationSettings> settings) : IHostedService
+    public class SimulationHost : IHostedService
     {
-        private readonly ILogger<SimulationHost> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        private readonly ISharedResourceService _sharedResourceService = sharedResourceService ?? throw new ArgumentNullException(nameof(sharedResourceService));
-        private readonly SimulationSettings _settings = settings?.Value ?? throw new ArgumentNullException(nameof(settings));
+        private readonly ILogger<SimulationHost> _logger;
+        private readonly ISharedResourceService _sharedResourceService;
+        private readonly SimulationSettings _settings;
+        private readonly IHostApplicationLifetime _applicationLifetime;
         private CancellationTokenSource? _cancellationTokenSource;
+
+        public SimulationHost(
+            ILogger<SimulationHost> logger,
+            ISharedResourceService sharedResourceService,
+            IOptions<SimulationSettings> settings,
+            IHostApplicationLifetime applicationLifetime)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _sharedResourceService = sharedResourceService ?? throw new ArgumentNullException(nameof(sharedResourceService));
+            _settings = settings?.Value ?? throw new ArgumentNullException(nameof(settings));
+            _applicationLifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+        }
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
@@ -75,22 +85,22 @@ namespace ReaderWriter.ConsoleApp
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(_settings.SimulationDurationSeconds));
 
-            List<Task> tasks = [];
+            var tasks = new List<Task>();
 
             // Create writer tasks
             for (int i = 1; i <= _settings.NumberOfWriters; i++)
             {
-                int writerId = i;
+                var writerId = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    Random random = new(writerId);
-                    int writeCount = 0;
+                    var random = new Random(writerId);
+                    var writeCount = 0;
 
                     while (!_cancellationTokenSource.Token.IsCancellationRequested)
                     {
                         try
                         {
-                            string data = $"Data from Writer {writerId} - Item {++writeCount} - {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}";
+                            var data = $"Data from Writer {writerId} - Item {++writeCount} - {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}";
                             await _sharedResourceService.WriteAsync(writerId, data, _cancellationTokenSource.Token);
 
                             // Wait before next write
@@ -114,17 +124,17 @@ namespace ReaderWriter.ConsoleApp
             // Create reader tasks
             for (int i = 1; i <= _settings.NumberOfReaders; i++)
             {
-                int readerId = i;
+                var readerId = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    Random random = new(readerId);
-                    int readCount = 0;
+                    var random = new Random(readerId);
+                    var readCount = 0;
 
                     while (!_cancellationTokenSource.Token.IsCancellationRequested)
                     {
                         try
                         {
-                            string data = await _sharedResourceService.ReadAsync(readerId, _cancellationTokenSource.Token);
+                            var data = await _sharedResourceService.ReadAsync(readerId, _cancellationTokenSource.Token);
                             readCount++;
 
                             // Wait before next read
@@ -149,6 +159,9 @@ namespace ReaderWriter.ConsoleApp
             await Task.WhenAll(tasks);
 
             _logger.LogInformation("Simulation completed successfully");
+
+            // Stop the application after simulation completes
+            _applicationLifetime.StopApplication();
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
