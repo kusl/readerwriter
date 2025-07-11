@@ -1,0 +1,169 @@
+name: Build, Test, and Run
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test-run:
+    name: Build, Test & Run on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe_name: ReaderWriter.ConsoleApp
+          - os: windows-latest
+            rid: win-x64
+            exe_name: ReaderWriter.ConsoleApp.exe
+          - os: macos-latest
+            rid: osx-x64
+            exe_name: ReaderWriter.ConsoleApp
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 9
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Display .NET version
+      run: dotnet --version
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed" --logger "trx;LogFileName=test-results.trx"
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.os }}
+        path: '**/test-results.trx'
+
+    - name: Publish application
+      run: |
+        cd ReaderWriter.ConsoleApp
+        dotnet publish -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
+
+    - name: Copy appsettings.json to publish directory
+      shell: bash
+      run: |
+        if [ ! -f "ReaderWriter.ConsoleApp/publish/appsettings.json" ]; then
+          cp ReaderWriter.ConsoleApp/appsettings.json ReaderWriter.ConsoleApp/publish/
+        fi
+
+    - name: Make executable (Unix)
+      if: runner.os != 'Windows'
+      run: chmod +x ReaderWriter.ConsoleApp/publish/${{ matrix.exe_name }}
+
+    - name: Run with default settings
+      shell: bash
+      run: |
+        echo "Running with default settings from appsettings.json..."
+        cd ReaderWriter.ConsoleApp/publish
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          ./${{ matrix.exe_name }}
+        else
+          ./${{ matrix.exe_name }}
+        fi
+
+    - name: Run with custom settings
+      shell: bash
+      run: |
+        echo "Running with custom settings..."
+        cd ReaderWriter.ConsoleApp/publish
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          ./${{ matrix.exe_name }} --readers 10 --writers 2 --duration 5
+        else
+          ./${{ matrix.exe_name }} --readers 10 --writers 2 --duration 5
+        fi
+
+    - name: Run with environment variables
+      shell: bash
+      env:
+        SimulationSettings__NumberOfReaders: 15
+        SimulationSettings__NumberOfWriters: 3
+        SimulationSettings__SimulationDurationSeconds: 5
+      run: |
+        echo "Running with environment variable overrides..."
+        cd ReaderWriter.ConsoleApp/publish
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          ./${{ matrix.exe_name }}
+        else
+          ./${{ matrix.exe_name }}
+        fi
+
+    - name: Upload published artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: published-app-${{ matrix.os }}
+        path: ReaderWriter.ConsoleApp/publish/
+
+  release:
+    name: Create Release Artifacts
+    needs: build-test-run
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Display structure of downloaded files
+      run: ls -R
+
+    - name: Create release archives
+      run: |
+        # Create archives for each OS
+        cd published-app-ubuntu-latest && tar -czf ../ReaderWriter-linux-x64.tar.gz * && cd ..
+        cd published-app-windows-latest && zip -r ../ReaderWriter-win-x64.zip * && cd ..
+        cd published-app-macos-latest && tar -czf ../ReaderWriter-osx-x64.tar.gz * && cd ..
+
+    - name: Upload release archives
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-archives
+        path: |
+          ReaderWriter-*.tar.gz
+          ReaderWriter-*.zip
+
+  code-analysis:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Run code analysis
+      run: |
+        dotnet tool install --global dotnet-format
+        dotnet format --verify-no-changes --verbosity diagnostic || true
+        
+    - name: Run security scan
+      run: |
+        dotnet tool install --global security-scan
+        security-scan ./ReaderWriter.sln || true
