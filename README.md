@@ -103,7 +103,7 @@ dotnet publish -c Release -r linux-x64 --self-contained
 
 ## License
 
-Apache 2.0 - See LICENSE.txt
+AGPL - See LICENSE.txt
 
 ---
 
