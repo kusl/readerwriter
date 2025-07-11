@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ReaderWriter.Core;
 using Serilog;
+using Serilog.Settings.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -45,9 +46,17 @@ namespace ReaderWriter.ConsoleApp
                         { "-l", "Serilog:MinimumLevel" }
                     });
                 })
-                .UseSerilog((context, services, configuration) => configuration
-                    .ReadFrom.Configuration(context.Configuration)
-                    .ReadFrom.Services(services))
+                .UseSerilog((context, services, configuration) =>
+                {
+                    // Explicitly specify assemblies for single-file publishing
+                    var readerOptions = new ConfigurationReaderOptions(
+                        typeof(Serilog.ConsoleLoggerConfigurationExtensions).Assembly,
+                        typeof(Serilog.FileLoggerConfigurationExtensions).Assembly);
+
+                    configuration
+                        .ReadFrom.Configuration(context.Configuration, readerOptions)
+                        .ReadFrom.Services(services);
+                })
                 .ConfigureServices((context, services) =>
                 {
                     // Register configuration
