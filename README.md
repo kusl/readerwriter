@@ -70,8 +70,7 @@ Edit `appsettings.json` to control the simulation:
 
 ### Linux/macOS
 ```bash
-chmod +x ReaderWriter.ConsoleApp/run-linux.sh
-./ReaderWriter.ConsoleApp/run-linux.sh
+bash simple-run.sh
 ```
 
 ### Published Binary
