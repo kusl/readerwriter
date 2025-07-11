@@ -30,6 +30,21 @@ namespace ReaderWriter.ConsoleApp
         public static async Task Main(string[] args)
         {
             var host = Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((context, config) =>
+                {
+                    // Add command line configuration
+                    config.AddCommandLine(args, new Dictionary<string, string>
+                    {
+                        { "--readers", "SimulationSettings:NumberOfReaders" },
+                        { "-r", "SimulationSettings:NumberOfReaders" },
+                        { "--writers", "SimulationSettings:NumberOfWriters" },
+                        { "-w", "SimulationSettings:NumberOfWriters" },
+                        { "--duration", "SimulationSettings:SimulationDurationSeconds" },
+                        { "-d", "SimulationSettings:SimulationDurationSeconds" },
+                        { "--loglevel", "Serilog:MinimumLevel" },
+                        { "-l", "Serilog:MinimumLevel" }
+                    });
+                })
                 .UseSerilog((context, services, configuration) => configuration
                     .ReadFrom.Configuration(context.Configuration)
                     .ReadFrom.Services(services))
