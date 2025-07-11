@@ -1,4 +1,3 @@
-```markdown
 # The Reader-Writer Problem: A Deep Dive
 
 ## The Core Concept
@@ -318,4 +317,3 @@ No locks, no conflicts!
 ```
 
 Your insight about granularity is spot-on - it's one of the most important concepts in concurrent system design. The Reader-Writer pattern provides the rules, but WHERE you apply those rules (entire system vs. individual records) makes all the difference in scalability.
-```
