@@ -179,8 +179,16 @@ public class SimulationHost : IHostedService
             }, _cancellationTokenSource.Token));
         }
 
-        // Wait for all tasks to complete
-        await Task.WhenAll(tasks);
+        try
+        {
+            // Wait for all tasks to complete
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            // This is expected when the simulation duration expires
+            _logger.LogInformation("Simulation duration expired, shutting down gracefully");
+        }
 
         _logger.LogInformation("Simulation completed successfully");
 
