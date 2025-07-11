@@ -3,11 +3,12 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ '**' ]  # Run on push to any branch
   pull_request:
-    branches: [ main, master ]
+    branches: [ '**' ]  # Run on PR to any branch
   schedule:
-    - cron: '30 1 * * 0'
+    - cron: '30 1 * * 0'  # Weekly scan on Sundays at 1:30 AM
+  workflow_dispatch:  # Allow manual triggers
 
 jobs:
   analyze:
