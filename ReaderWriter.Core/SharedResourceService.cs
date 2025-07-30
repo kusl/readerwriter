@@ -62,7 +62,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
-        _sharedData = new List<string>();
+        _sharedData = [];
         _random = new Random();
         _lockTimeout = lockTimeout;
         _maxDataSize = maxDataSize;
@@ -74,10 +74,10 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
         
         return await Task.Run(() =>
         {
-            using var activity = Activity.Current?.Source.StartActivity("ReadOperation");
+            using Activity? activity = Activity.Current?.Source.StartActivity("ReadOperation");
             activity?.SetTag("reader.id", readerId);
-            
-            var stopwatch = Stopwatch.StartNew();
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
             _logger.LogDebug("Reader {ReaderId} attempting to acquire read lock", readerId);
             
             if (!_lock.TryEnterReadLock(_lockTimeout))
@@ -93,8 +93,8 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                
-                var lockAcquiredTime = stopwatch.ElapsedMilliseconds;
+
+                long lockAcquiredTime = stopwatch.ElapsedMilliseconds;
                 _logger.LogDebug(
                     "Reader {ReaderId} acquired read lock after {ElapsedMs}ms. Current readers: {ReaderCount}", 
                     readerId, 
@@ -106,7 +106,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
 
                 // Simulate variable read duration with cancellation support
                 int delay = _random.Next(100, 500);
-                var delayTask = Task.Delay(delay, cancellationToken);
+                Task delayTask = Task.Delay(delay, cancellationToken);
                 delayTask.Wait(cancellationToken);
 
                 string data = _sharedData.Count > 0
@@ -118,7 +118,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
                 _logger.LogInformation(
                     "Reader {ReaderId} read data: {Data} (Length: {Length})", 
                     readerId, 
-                    data.Length > 50 ? data.Substring(0, 47) + "..." : data,
+                    data.Length > 50 ? string.Concat(data.AsSpan(0, 47), "...") : data,
                     data.Length);
                 
                 activity?.SetTag("operation.success", true);
@@ -141,7 +141,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
             finally
             {
                 _lock.ExitReadLock();
-                var totalTime = stopwatch.ElapsedMilliseconds;
+                long totalTime = stopwatch.ElapsedMilliseconds;
                 _logger.LogDebug(
                     "Reader {ReaderId} released read lock. Total operation time: {ElapsedMs}ms", 
                     readerId, 
@@ -154,20 +154,19 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
     public async Task WriteAsync(int writerId, string data, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        
-        if (data == null)
-            throw new ArgumentNullException(nameof(data));
+
+        ArgumentNullException.ThrowIfNull(data);
 
         if (data.Length > _maxDataSize)
             throw new ArgumentException($"Data size {data.Length} exceeds maximum allowed size {_maxDataSize}", nameof(data));
 
         await Task.Run(() =>
         {
-            using var activity = Activity.Current?.Source.StartActivity("WriteOperation");
+            using Activity? activity = Activity.Current?.Source.StartActivity("WriteOperation");
             activity?.SetTag("writer.id", writerId);
             activity?.SetTag("data.length", data.Length);
-            
-            var stopwatch = Stopwatch.StartNew();
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
             _logger.LogDebug("Writer {WriterId} attempting to acquire write lock", writerId);
 
             if (!_lock.TryEnterWriteLock(_lockTimeout))
@@ -183,8 +182,8 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                
-                var lockAcquiredTime = stopwatch.ElapsedMilliseconds;
+
+                long lockAcquiredTime = stopwatch.ElapsedMilliseconds;
                 _logger.LogDebug(
                     "Writer {WriterId} acquired write lock after {ElapsedMs}ms", 
                     writerId, 
@@ -195,7 +194,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
                 // Check if we need to trim old data to prevent unbounded growth
                 if (_sharedData.Count >= _maxDataSize)
                 {
-                    var itemsToRemove = _sharedData.Count - _maxDataSize + 1;
+                    int itemsToRemove = _sharedData.Count - _maxDataSize + 1;
                     _sharedData.RemoveRange(0, itemsToRemove);
                     _logger.LogDebug(
                         "Writer {WriterId} trimmed {Count} old items from shared data", 
@@ -205,7 +204,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
 
                 // Simulate variable write duration with cancellation support
                 int delay = _random.Next(200, 800);
-                var delayTask = Task.Delay(delay, cancellationToken);
+                Task delayTask = Task.Delay(delay, cancellationToken);
                 delayTask.Wait(cancellationToken);
 
                 _sharedData.Add(data);
@@ -214,7 +213,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
                 _logger.LogInformation(
                     "Writer {WriterId} wrote data: {Data} (Length: {Length}). Total items: {Count}",
                     writerId, 
-                    data.Length > 50 ? data.Substring(0, 47) + "..." : data,
+                    data.Length > 50 ? string.Concat(data.AsSpan(0, 47), "...") : data,
                     data.Length,
                     _sharedData.Count);
                 
@@ -236,7 +235,7 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
             finally
             {
                 _lock.ExitWriteLock();
-                var totalTime = stopwatch.ElapsedMilliseconds;
+                long totalTime = stopwatch.ElapsedMilliseconds;
                 _logger.LogDebug(
                     "Writer {WriterId} released write lock. Total operation time: {ElapsedMs}ms", 
                     writerId, 
@@ -265,12 +264,13 @@ public sealed class SharedResourceService : ISharedResourceService, IDisposable
         {
             _logger.LogError(ex, "Error during disposal of SharedResourceService");
         }
-    }
+    }    
 
     private void ThrowIfDisposed()
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(SharedResourceService));
+        //if (_disposed)
+        //    throw new ObjectDisposedException(nameof(SharedResourceService));
+        ObjectDisposedException.ThrowIf(_disposed, nameof(SharedResourceService));
     }
 }
 
@@ -286,7 +286,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<ISharedResourceService>(provider =>
         {
-            var logger = provider.GetRequiredService<ILogger<SharedResourceService>>();
+            ILogger<SharedResourceService> logger = provider.GetRequiredService<ILogger<SharedResourceService>>();
             return new SharedResourceService(
                 logger,
                 lockTimeout ?? TimeSpan.FromSeconds(30),

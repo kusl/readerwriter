@@ -41,29 +41,30 @@ public class TestLogger<T> : ILogger<T>
 
 public class SharedResourceServiceTests : IDisposable
 {
-    private readonly List<SharedResourceService> _servicesToDispose = new();
+    private readonly List<SharedResourceService> _servicesToDispose = [];
 
     private SharedResourceService CreateService(out TestLogger<SharedResourceService> logger)
     {
         logger = new TestLogger<SharedResourceService>();
-        var service = new SharedResourceService(logger);
+        SharedResourceService service = new(logger);
         _servicesToDispose.Add(service);
         return service;
     }
 
     public void Dispose()
     {
-        foreach (var service in _servicesToDispose)
+        foreach (SharedResourceService service in _servicesToDispose)
         {
             service?.Dispose();
         }
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
     public async Task WriteAsync_WithValidData_AddsItemToResource()
     {
         // Arrange
-        var service = CreateService(out var logger);
+        SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
         int writerId = 1;
         string data = "Test data";
         CancellationToken cancellationToken = CancellationToken.None;
@@ -86,7 +87,7 @@ public class SharedResourceServiceTests : IDisposable
     public async Task WriteAsync_WithNullData_ThrowsArgumentNullException()
     {
         // Arrange
-        var service = CreateService(out _);
+        SharedResourceService service = CreateService(out _);
         int writerId = 1;
         string? data = null;
         CancellationToken cancellationToken = CancellationToken.None;
@@ -100,7 +101,7 @@ public class SharedResourceServiceTests : IDisposable
     public async Task ReadAsync_OnEmptyResource_ReturnsDefault()
     {
         // Arrange
-        var service = CreateService(out var logger);
+        SharedResourceService service = CreateService(out TestLogger<SharedResourceService>? logger);
         int readerId = 1;
         CancellationToken cancellationToken = CancellationToken.None;
 
@@ -121,12 +122,12 @@ public class SharedResourceServiceTests : IDisposable
     public async Task WriterExclusivity_BlocksConcurrentReaders()
     {
         // Arrange
-        var service = CreateService(out _);
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        SharedResourceService service = CreateService(out _);
+        CancellationTokenSource cts = new(TimeSpan.FromSeconds(10));
 
         // Act
         // Start a long-running write operation
-        var writeTask = Task.Run(async () =>
+        Task writeTask = Task.Run(async () =>
         {
             await service.WriteAsync(1, "Writer data", CancellationToken.None);
         });
@@ -135,10 +136,10 @@ public class SharedResourceServiceTests : IDisposable
         await Task.Delay(50);
 
         // Try to read while write is in progress
-        var readTask = service.ReadAsync(1, cts.Token);
-        
+        Task<string> readTask = service.ReadAsync(1, cts.Token);
+
         // Check if read completes quickly (it shouldn't if writer has lock)
-        var completedTask = await Task.WhenAny(readTask, Task.Delay(100));
+        Task completedTask = await Task.WhenAny(readTask, Task.Delay(100));
         
         if (completedTask == readTask)
         {
@@ -155,15 +156,15 @@ public class SharedResourceServiceTests : IDisposable
     public async Task ReaderConcurrency_AllowsMultipleConcurrentReaders()
     {
         // Arrange
-        var service = CreateService(out _);
+        SharedResourceService service = CreateService(out _);
         CancellationToken cancellationToken = CancellationToken.None;
 
         // Add initial data
         await service.WriteAsync(1, "Initial data", cancellationToken);
 
         // Act - Start multiple readers concurrently
-        var sw = Stopwatch.StartNew();
-        var readerTasks = new List<Task>();
+        Stopwatch sw = Stopwatch.StartNew();
+        List<Task> readerTasks = [];
         
         for (int i = 0; i < 5; i++)
         {
@@ -185,14 +186,14 @@ public class SharedResourceServiceTests : IDisposable
     public async Task HighConcurrency_MaintainsDataIntegrity()
     {
         // Arrange
-        var service = CreateService(out _);
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        SharedResourceService service = CreateService(out _);
+        CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
         int writersCount = 5;
         int readersCount = 10;
-        var writtenData = new System.Collections.Concurrent.ConcurrentBag<string>();
+        System.Collections.Concurrent.ConcurrentBag<string> writtenData = [];
 
         // Act - Run writers and readers concurrently
-        var tasks = new List<Task>();
+        List<Task> tasks = [];
 
         // Create writer tasks
         for (int i = 0; i < writersCount; i++)
@@ -227,7 +228,7 @@ public class SharedResourceServiceTests : IDisposable
         await Task.WhenAll(tasks);
 
         // Read final data to verify count
-        var lastData = await service.ReadAsync(999, cts.Token);
+        string lastData = await service.ReadAsync(999, cts.Token);
         
         // Assert - we wrote the expected number of items
         Assert.Equal(writersCount * 3, writtenData.Count);
@@ -237,7 +238,7 @@ public class SharedResourceServiceTests : IDisposable
     public async Task MultipleReadersGetSameData_WhenNoWritesOccur()
     {
         // Arrange
-        var service = CreateService(out _);
+        SharedResourceService service = CreateService(out _);
         CancellationToken cancellationToken = CancellationToken.None;
         string testData = "Test data for concurrent reads";
 
@@ -245,7 +246,7 @@ public class SharedResourceServiceTests : IDisposable
         await service.WriteAsync(1, testData, cancellationToken);
 
         // Act - Multiple readers read concurrently
-        var readTasks = new List<Task<string>>();
+        List<Task<string>> readTasks = [];
         for (int i = 0; i < 10; i++)
         {
             readTasks.Add(service.ReadAsync(i, cancellationToken));
@@ -261,13 +262,13 @@ public class SharedResourceServiceTests : IDisposable
     public async Task Service_HandlesRapidReadWriteAlternation()
     {
         // Arrange
-        var service = CreateService(out _);
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        SharedResourceService service = CreateService(out _);
+        CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
         int iterations = 10;
-        var errors = new List<Exception>();
+        List<Exception> errors = [];
 
         // Act - Rapidly alternate between reads and writes
-        var tasks = new List<Task>();
+        List<Task> tasks = [];
 
         for (int i = 0; i < iterations; i++)
         {
@@ -316,7 +317,7 @@ public class SharedResourceServiceTests : IDisposable
     public async Task Service_ThrowsObjectDisposedException_WhenDisposed()
     {
         // Arrange
-        var service = CreateService(out _);
+        SharedResourceService service = CreateService(out _);
         service.Dispose();
 
         // Act & Assert
